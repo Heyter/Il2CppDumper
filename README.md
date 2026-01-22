@@ -6,6 +6,13 @@
 
 Unity il2cpp reverse engineer
 
+## Disclaimer
+
+This fork updates Il2CppDumper to correctly support Metadata v38 and above (up to v39/Unity 6000.x).
+
+- Custom Attribute Enums: Fixed parsing logic for 38+ attributes.
+- Validated and tested against Metadata v39.
+
 ## Features
 
 * Complete DLL restore (except code), can be used to extract `MonoBehaviour` and `MonoScript`

@@ -1,10 +1,9 @@
 ﻿using System;
 
-namespace Il2CppDumper
+namespace Il2CppDumper;
+
+[AttributeUsage(AttributeTargets.Field)]
+internal class ArrayLengthAttribute : Attribute
 {
-    [AttributeUsage(AttributeTargets.Field)]
-    class ArrayLengthAttribute : Attribute
-    {
-        public int Length { get; set; }
-    }
+    public int Length { get; set; }
 }

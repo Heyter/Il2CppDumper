@@ -1,12 +1,11 @@
 ﻿using Mono.Cecil;
 
-namespace Il2CppDumper
+namespace Il2CppDumper;
+
+public class MyAssemblyResolver : DefaultAssemblyResolver
 {
-    public class MyAssemblyResolver : DefaultAssemblyResolver
+    public void Register(AssemblyDefinition assembly)
     {
-        public void Register(AssemblyDefinition assembly)
-        {
-            RegisterAssembly(assembly);
-        }
+        RegisterAssembly(assembly);
     }
 }

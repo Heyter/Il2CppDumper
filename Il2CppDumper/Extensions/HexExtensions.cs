@@ -1,23 +1,23 @@
 ﻿using System;
 using System.Text;
 
-namespace Il2CppDumper
+namespace Il2CppDumper;
+
+internal static class HexExtensions
 {
-    static class HexExtensions
+    public static string HexToBin(this byte b)
     {
-        public static string HexToBin(this byte b)
+        return Convert.ToString(b, 2).PadLeft(8, '0');
+    }
+
+    public static string HexToBin(this byte[] bytes)
+    {
+        var result = new StringBuilder(bytes.Length * 8);
+        foreach (var b in bytes)
         {
-            return Convert.ToString(b, 2).PadLeft(8, '0');
+            result.Insert(0, b.HexToBin());
         }
 
-        public static string HexToBin(this byte[] bytes)
-        {
-            var result = new StringBuilder(bytes.Length * 8);
-            foreach (var b in bytes)
-            {
-                result.Insert(0, b.HexToBin());
-            }
-            return result.ToString();
-        }
+        return result.ToString();
     }
 }

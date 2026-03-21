@@ -1,8 +1,7 @@
-﻿namespace Il2CppDumper
+﻿namespace Il2CppDumper;
+
+public class AttributeArgument
 {
-    public class AttributeArgument
-    {
-        public BlobValue Value;
-        public int Index;
-    }
+    public int Index;
+    public BlobValue Value;
 }

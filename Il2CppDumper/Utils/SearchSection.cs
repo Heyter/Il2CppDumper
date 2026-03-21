@@ -1,17 +1,16 @@
-﻿namespace Il2CppDumper
-{
-    public enum SearchSectionType
-    {
-        Exec,
-        Data,
-        Bss
-    }
+﻿namespace Il2CppDumper;
 
-    public class SearchSection
-    {
-        public ulong offset;
-        public ulong offsetEnd;
-        public ulong address;
-        public ulong addressEnd;
-    }
+public enum SearchSectionType
+{
+    Exec,
+    Data,
+    Bss
+}
+
+public class SearchSection
+{
+    public ulong address;
+    public ulong addressEnd;
+    public ulong offset;
+    public ulong offsetEnd;
 }

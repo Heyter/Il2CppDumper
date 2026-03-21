@@ -8,11 +8,12 @@
     <FileVersion>1.0.0.0</FileVersion>
     <Copyright>Copyright © Perfare 2016-2024</Copyright>
     <DebugType>embedded</DebugType>
-	<BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Mono.Cecil" Version="0.11.6" />
+    <PackageReference Include="JetBrains.Annotations" Version="2025.2.4"/>
+    <PackageReference Include="Mono.Cecil" Version="0.11.6"/>
   </ItemGroup>
 
   <ItemGroup>

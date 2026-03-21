@@ -1,9 +1,8 @@
-﻿namespace Il2CppDumper
+﻿namespace Il2CppDumper;
+
+public class BlobValue
 {
-    public class BlobValue
-    {
-        public object Value;
-        public Il2CppTypeEnum il2CppTypeEnum;
-        public Il2CppType EnumType;
-    }
+    public Il2CppType EnumType;
+    public Il2CppTypeEnum il2CppTypeEnum;
+    public object Value;
 }

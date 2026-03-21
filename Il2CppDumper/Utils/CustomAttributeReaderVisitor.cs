@@ -1,10 +1,9 @@
-﻿namespace Il2CppDumper
+﻿namespace Il2CppDumper;
+
+public class CustomAttributeReaderVisitor
 {
-    public class CustomAttributeReaderVisitor
-    {
-        public int CtorIndex;
-        public AttributeArgument[] Arguments;
-        public AttributeArgument[] Fields;
-        public AttributeArgument[] Properties;
-    }
+    public AttributeArgument[] Arguments;
+    public int CtorIndex;
+    public AttributeArgument[] Fields;
+    public AttributeArgument[] Properties;
 }

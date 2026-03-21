@@ -1,11 +1,10 @@
 ﻿using System;
 
-namespace Il2CppDumper
+namespace Il2CppDumper;
+
+[AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
+internal class VersionAttribute : Attribute
 {
-    [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
-    class VersionAttribute : Attribute
-    {
-        public double Min { get; set; } = 0;
-        public double Max { get; set; } = 99;
-    }
+    public double Min { get; set; } = 0;
+    public double Max { get; set; } = 99;
 }

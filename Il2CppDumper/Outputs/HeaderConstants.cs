@@ -1,9 +1,9 @@
-﻿namespace Il2CppDumper
+﻿namespace Il2CppDumper;
+
+public static class HeaderConstants
 {
-    public static class HeaderConstants
-    {
-        public readonly static string GenericHeader =
-@"typedef void(*Il2CppMethodPointer)();
+    public static readonly string GenericHeader =
+        @"typedef void(*Il2CppMethodPointer)();
 
 struct MethodInfo;
 
@@ -42,8 +42,8 @@ struct Il2CppRuntimeInterfaceOffsetPair
 };
 ";
 
-        public readonly static string HeaderV29 =
-@"struct Il2CppClass_1
+    public static readonly string HeaderV29 =
+        @"struct Il2CppClass_1
 {
     void* image;
     void* gc_desc;
@@ -151,8 +151,8 @@ struct MethodInfo
 
 ";
 
-        public readonly static string HeaderV27 =
-@"struct Il2CppClass_1
+    public static readonly string HeaderV27 =
+        @"struct Il2CppClass_1
 {
     void* image;
     void* gc_desc;
@@ -258,8 +258,8 @@ struct MethodInfo
 
 ";
 
-        public readonly static string HeaderV242 =
-@"struct Il2CppClass_1
+    public static readonly string HeaderV242 =
+        @"struct Il2CppClass_1
 {
     void* image;
     void* gc_desc;
@@ -365,8 +365,8 @@ struct MethodInfo
 
 ";
 
-        public readonly static string HeaderV241 =
-@"struct Il2CppClass_1
+    public static readonly string HeaderV241 =
+        @"struct Il2CppClass_1
 {
     void* image;
     void* gc_desc;
@@ -471,8 +471,8 @@ struct MethodInfo
 
 ";
 
-        public readonly static string HeaderV240 =
-@"struct Il2CppClass_1
+    public static readonly string HeaderV240 =
+        @"struct Il2CppClass_1
 {
     void* image;
     void* gc_desc;
@@ -576,8 +576,8 @@ struct MethodInfo
 
 ";
 
-        public readonly static string HeaderV22 =
-@"struct Il2CppClass_1
+    public static readonly string HeaderV22 =
+        @"struct Il2CppClass_1
 {
     void* image;
     void* gc_desc;
@@ -679,5 +679,4 @@ struct MethodInfo
 };
 
 ";
-    }
 }

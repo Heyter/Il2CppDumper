@@ -100,12 +100,6 @@ internal class Program
                 Console.WriteLine(e);
             }
         }
-
-        if (config.RequireAnyKey)
-        {
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey(true);
-        }
     }
 
     static void GenerateReplaceNameMap()
@@ -171,30 +165,28 @@ internal class Program
                 {
                     il2Cpp = new Elf(il2CppMemory);
                 }
-
                 break;
             case 0xCAFEBABE: //FAT Mach-O
             case 0xBEBAFECA:
                 var machofat = new MachoFat(new MemoryStream(il2cppBytes));
-                Console.Write("Select Platform: ");
+                // Auto-select 64bit if available, otherwise first entry
+                var index = 0;
                 for (var i = 0; i < machofat.fats.Length; i++)
                 {
-                    var fat = machofat.fats[i];
-                    Console.Write(fat.magic == 0xFEEDFACF ? $"{i + 1}.64bit " : $"{i + 1}.32bit ");
+                    if (machofat.fats[i].magic == 0xFEEDFACF)
+                    {
+                        index = i;
+                        break;
+                    }
                 }
-
-                Console.WriteLine();
-                var key = Console.ReadKey(true);
-                var index = int.Parse(key.KeyChar.ToString()) - 1;
-                var magic = machofat.fats[index % 2].magic;
-                il2cppBytes = machofat.GetMacho(index % 2);
+                Console.WriteLine($"Auto-selected: {(machofat.fats[index].magic == 0xFEEDFACF ? "64bit" : "32bit")}");
+                var magic = machofat.fats[index].magic;
+                il2cppBytes = machofat.GetMacho(index);
                 il2CppMemory = new MemoryStream(il2cppBytes);
                 if (magic == 0xFEEDFACF)
-                {
                     goto case 0xFEEDFACF;
-                }
-
-                goto case 0xFEEDFACE;
+                else
+                    goto case 0xFEEDFACE;
             case 0xFEEDFACF: // 64bit Mach-O
                 il2Cpp = new Macho64(il2CppMemory);
                 break;
@@ -210,9 +202,8 @@ internal class Program
         {
             if (il2Cpp is ElfBase elf)
             {
-                Console.WriteLine("Detected this may be a dump file.");
-                Console.WriteLine("Input il2cpp dump address or input 0 to force continue:");
-                var DumpAddr = Convert.ToUInt64(Console.ReadLine(), 16);
+                Console.WriteLine("Detected this may be a dump file. Auto-continuing with address 0.");
+                var DumpAddr = (ulong)0;
                 if (DumpAddr != 0)
                 {
                     il2Cpp.ImageBase = DumpAddr;
@@ -262,12 +253,8 @@ internal class Program
 
             if (!flag)
             {
-                Console.WriteLine("ERROR: Can't use auto mode to process file, try manual mode.");
-                Console.Write("Input CodeRegistration: ");
-                var codeRegistration = Convert.ToUInt64(Console.ReadLine(), 16);
-                Console.Write("Input MetadataRegistration: ");
-                var metadataRegistration = Convert.ToUInt64(Console.ReadLine(), 16);
-                il2Cpp.Init(codeRegistration, metadataRegistration);
+                Console.WriteLine("ERROR: Can't use auto mode to process file. Manual mode not available in headless mode.");
+                return false;
             }
 
             if (il2Cpp.Version >= 27 && il2Cpp.IsDumped)

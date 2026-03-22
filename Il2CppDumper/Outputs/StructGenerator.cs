@@ -446,7 +446,10 @@ public class StructGenerator
             JsonSerializer.Serialize(stringLiterals, jsonOptions),
             new UTF8Encoding(false));
         //写入文件
-        File.WriteAllText(outputDir + "script.json", JsonSerializer.Serialize(json, jsonOptions));
+        using (var stream = new FileStream(outputDir + "script.json",FileMode.Create))
+        {
+            JsonSerializer.Serialize(stream, json, jsonOptions);
+        }
         //il2cpp.h
         for (var i = 0; i < genericClassList.Count; i++)
         {
@@ -509,7 +512,21 @@ public class StructGenerator
         sb.Append(headerStruct);
         sb.Append(arrayClassHeader);
         sb.Append(methodInfoHeader);
-        File.WriteAllText(outputDir + "il2cpp.h", sb.ToString());
+        int bufferSize = 4096;
+        using (StreamWriter writer = new StreamWriter(outputDir + "il2cpp.h", false, Encoding.UTF8, bufferSize))
+        {
+            int index = 0;
+            int length = sb.Length;
+            char[] buffer = new char[bufferSize];
+
+            while (index < length)
+            {
+                int count = Math.Min(bufferSize, length - index);
+                sb.CopyTo(index, buffer, 0, count);
+                writer.Write(buffer, 0, count);
+                index += count;
+            }
+        }
     }
 
     private void AddMetadataUsageTypeInfo(ScriptJson json, uint index, ulong address)

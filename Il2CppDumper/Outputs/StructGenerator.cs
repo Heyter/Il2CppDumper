@@ -66,7 +66,7 @@ public class StructGenerator
         il2Cpp = il2CppExecutor.il2Cpp;
     }
 
-    public void WriteScript(string outputDir)
+    public void WriteScript(string outputDir, bool escapeJsonValues)
     {
         var json = new ScriptJson();
         // 生成唯一名称
@@ -441,6 +441,10 @@ public class StructGenerator
         var stringLiterals = json.ScriptString.Select(x => new { value = x.Value, address = $"0x{x.Address:X}" })
             .ToArray();
         var jsonOptions = new JsonSerializerOptions { WriteIndented = true, IncludeFields = true };
+        if (!escapeJsonValues)
+        {
+            jsonOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+        }
         File.WriteAllText(
             outputDir + "stringliteral.json",
             JsonSerializer.Serialize(stringLiterals, jsonOptions),

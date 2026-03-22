@@ -28,5 +28,6 @@ namespace Il2CppDumper
         public bool NoRedirectedPointer { get; set; } = false;
         public List<ReplaceHashName> ReplaceHashNames { get; set; }
         public Dictionary<string, string> ReplaceHashNameMap { get; set; }
+        public bool EscapeJsonValues { get; set; } = false;
     }
 }

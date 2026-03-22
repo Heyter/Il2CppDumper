@@ -14,5 +14,6 @@
   "ForceVersion": 16,
   "ForceDump": false,
   "NoRedirectedPointer": false,
-  "ReplaceHashNames": []
+  "ReplaceHashNames": [],
+  "EscapeJsonValues": true
 }

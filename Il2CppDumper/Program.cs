@@ -309,7 +309,7 @@ internal class Program
         {
             Console.WriteLine("Generate struct...");
             var scriptGenerator = new StructGenerator(executor);
-            scriptGenerator.WriteScript(outputDir);
+            scriptGenerator.WriteScript(outputDir, config.EscapeJsonValues);
             Console.WriteLine("Done!");
         }
 

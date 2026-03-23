@@ -499,9 +499,12 @@ public class StructGenerator
             case 31:
                 sb.Append(HeaderConstants.HeaderV29);
                 break;
-            // TODO: unchecked headers likely invalids !
-            case 34:
+            case 35:
+            case 38:
             case 39:
+                Console.WriteLine(
+                    $"WARNING: Using outdated headers for il2cpp version [{il2Cpp.Version}] generating .h files");
+
                 sb.Append(HeaderConstants.HeaderV29);
                 break;
             default:

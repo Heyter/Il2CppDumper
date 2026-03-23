@@ -57,6 +57,12 @@ internal class Program
                 return 1;
             }
 
+            if (string.IsNullOrWhiteSpace(outputDir))
+            {
+                WriteLine("ERROR: The specified output folder is empty.");
+                return 1;
+            }
+
             Directory.CreateDirectory(outputDir);
             outputDir = Path.GetFullPath(outputDir) + Path.DirectorySeparatorChar;
 
@@ -245,7 +251,6 @@ internal class Program
             case 0xCAFEBABE: //FAT Mach-O
             case 0xBEBAFECA:
                 var machofat = new MachoFat(new MemoryStream(il2cppBytes));
-                // Auto-select 64bit if available, otherwise first entry
                 var index = 0;
                 for (var i = 0; i < machofat.fats.Length; i++)
                 {

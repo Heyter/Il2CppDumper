@@ -1,10 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.IO.Compression;
-using System.Linq;
-using System.Threading.Tasks;
+using System.Text;
 using System.Windows.Forms;
 
 namespace Il2CppDumperLauncher;
@@ -13,30 +9,154 @@ internal enum LaunchArchMode
 {
     Auto,
     Force32,
-    Force64
+    Force64,
 }
 
-internal enum TargetArch
+internal enum RuntimeBitness
 {
-    Unknown,
     Bit32,
-    Bit64
+    Bit64,
 }
 
 internal static class Program
 {
     [STAThread]
-    private static int Main(string[] args)
+    private static void Main(string[] args)
     {
-        if (args.Length >= 1)
+        if (args.Length == 0)
         {
-            return RunFromArgs(args);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.Run(new MainForm());
+            return;
         }
 
-        Application.EnableVisualStyles();
-        Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new MainForm());
-        return 0;
+        if (args.Length == 1 && IsHelpSwitch(args[0]))
+        {
+            ShowHelp();
+            return;
+        }
+
+        Environment.ExitCode = RunFromArgs(args);
+    }
+
+    internal static bool IsPackagePath(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".apk", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".xapk", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static async Task<int> LaunchAsync(
+        string inputPath,
+        string? metadataPath,
+        string outputPath,
+        LaunchArchMode mode,
+        Action<string>? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(inputPath) || !File.Exists(inputPath))
+        {
+            log?.Invoke("ERROR: Specify a valid binary, APK, or XAPK path.");
+            return 1;
+        }
+
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            log?.Invoke("ERROR: Specify an output folder.");
+            return 1;
+        }
+
+        if (!IsPackagePath(inputPath) && (string.IsNullOrWhiteSpace(metadataPath) || !File.Exists(metadataPath)))
+        {
+            log?.Invoke("ERROR: Specify a valid global-metadata.dat path.");
+            return 1;
+        }
+
+        if (!string.IsNullOrWhiteSpace(metadataPath) && !File.Exists(metadataPath))
+        {
+            log?.Invoke("ERROR: The selected global-metadata.dat file does not exist.");
+            return 1;
+        }
+
+        Directory.CreateDirectory(outputPath);
+
+        PreparedInput? prepared = null;
+        try
+        {
+            prepared = PrepareInput(inputPath, metadataPath, mode, log);
+            var childDir = prepared.TargetBitness == RuntimeBitness.Bit64 ? "bin64bit" : "bin32bit";
+            var childExe = Path.Combine(AppContext.BaseDirectory, childDir, "Il2CppDumper.exe");
+
+            if (!File.Exists(childExe))
+            {
+                log?.Invoke($"ERROR: Inner dumper was not found: {childExe}");
+                return 1;
+            }
+
+            var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
+            if (!File.Exists(configPath))
+            {
+                log?.Invoke($"ERROR: config.json was not found next to the launcher: {configPath}");
+                return 1;
+            }
+
+            log?.Invoke($"Selected runtime: {(prepared.TargetBitness == RuntimeBitness.Bit64 ? "64-bit" : "32-bit")}");
+            log?.Invoke($"Input binary: {prepared.BinaryPath}");
+            log?.Invoke($"Metadata: {prepared.MetadataPath}");
+            log?.Invoke($"Output: {outputPath}");
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = childExe,
+                WorkingDirectory = Path.GetDirectoryName(childExe)!,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
+            };
+
+            startInfo.Environment["IL2CPPDUMPER_CONFIG_PATH"] = configPath;
+            startInfo.ArgumentList.Add(prepared.BinaryPath);
+            startInfo.ArgumentList.Add(prepared.MetadataPath);
+            startInfo.ArgumentList.Add(outputPath);
+
+            using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+            process.OutputDataReceived += (_, e) =>
+            {
+                if (!string.IsNullOrWhiteSpace(e.Data))
+                {
+                    log?.Invoke(e.Data);
+                }
+            };
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (!string.IsNullOrWhiteSpace(e.Data))
+                {
+                    log?.Invoke(e.Data);
+                }
+            };
+
+            if (!process.Start())
+            {
+                log?.Invoke("ERROR: Failed to start the inner Il2CppDumper process.");
+                return 1;
+            }
+
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            await process.WaitForExitAsync();
+            return process.ExitCode;
+        }
+        catch (Exception ex)
+        {
+            log?.Invoke(ex.ToString());
+            return 1;
+        }
+        finally
+        {
+            prepared?.Dispose();
+        }
     }
 
     private static int RunFromArgs(string[] args)
@@ -44,6 +164,12 @@ internal static class Program
         try
         {
             var positional = ParseArchMode(args, out var mode);
+            if (positional.Count == 2 && IsPackagePath(positional[0]))
+            {
+                return LaunchAsync(positional[0], null, positional[1], mode, Console.WriteLine)
+                    .GetAwaiter()
+                    .GetResult();
+            }
 
             if (positional.Count < 3)
             {
@@ -51,12 +177,7 @@ internal static class Program
                 return 1;
             }
 
-            return LaunchAsync(
-                    positional[0],
-                    positional[1],
-                    positional[2],
-                    mode,
-                    Console.WriteLine)
+            return LaunchAsync(positional[0], positional[1], positional[2], mode, Console.WriteLine)
                 .GetAwaiter()
                 .GetResult();
         }
@@ -64,110 +185,6 @@ internal static class Program
         {
             Console.Error.WriteLine(ex);
             return 1;
-        }
-    }
-
-    internal static async Task<int> LaunchAsync(
-        string inputPath,
-        string metadataPath,
-        string outputDir,
-        LaunchArchMode mode,
-        Action<string>? log = null)
-    {
-        string? extractedTempDir = null;
-
-        try
-        {
-            if (string.IsNullOrWhiteSpace(inputPath) || !File.Exists(inputPath))
-            {
-                WriteLog(log, "Input file was not found.");
-                return 1;
-            }
-
-            if (string.IsNullOrWhiteSpace(metadataPath) || !File.Exists(metadataPath))
-            {
-                WriteLog(log, "global-metadata.dat was not found.");
-                return 1;
-            }
-
-            if (string.IsNullOrWhiteSpace(outputDir))
-            {
-                WriteLog(log, "Output directory is not specified.");
-                return 1;
-            }
-
-            Directory.CreateDirectory(outputDir);
-
-            var baseDir = AppContext.BaseDirectory;
-            var childDir = ResolveChildDir(inputPath, mode, log);
-            var childExe = Path.Combine(baseDir, childDir, "Il2CppDumper.exe");
-
-            if (!File.Exists(childExe))
-            {
-                WriteLog(log, $"Inner dumper executable was not found: {childExe}");
-                return 1;
-            }
-
-            var actualInputPath = inputPath;
-
-            if (IsApk(inputPath))
-            {
-                extractedTempDir = Path.Combine(Path.GetTempPath(), "Il2CppDumperLauncher", Guid.NewGuid().ToString("N"));
-                Directory.CreateDirectory(extractedTempDir);
-
-                actualInputPath = ExtractLibIl2CppFromApk(inputPath, extractedTempDir, childDir, log);
-
-                if (string.IsNullOrWhiteSpace(actualInputPath) || !File.Exists(actualInputPath))
-                {
-                    WriteLog(log, "Failed to extract libil2cpp.so from APK.");
-                    return 1;
-                }
-            }
-
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = childExe,
-                WorkingDirectory = Path.GetDirectoryName(childExe)!,
-                UseShellExecute = false,
-            };
-
-            startInfo.ArgumentList.Add(actualInputPath);
-            startInfo.ArgumentList.Add(metadataPath);
-            startInfo.ArgumentList.Add(outputDir);
-
-            var configPath = ResolveConfigPath(baseDir);
-            if (configPath != null)
-            {
-                startInfo.Environment["IL2CPPDUMPER_CONFIG_PATH"] = configPath;
-            }
-
-            WriteLog(log, $"Selected runtime: {childDir}");
-            WriteLog(log, $"Inner executable: {childExe}");
-            WriteLog(log, $"Input: {actualInputPath}");
-            WriteLog(log, $"Metadata: {metadataPath}");
-            WriteLog(log, $"Output: {outputDir}");
-
-            using var process = Process.Start(startInfo);
-            if (process == null)
-            {
-                WriteLog(log, "Failed to start inner dumper process.");
-                return 1;
-            }
-
-            await process.WaitForExitAsync();
-            return process.ExitCode;
-        }
-        catch (Exception ex)
-        {
-            WriteLog(log, ex.ToString());
-            return 1;
-        }
-        finally
-        {
-            if (!string.IsNullOrWhiteSpace(extractedTempDir))
-            {
-                TryDeleteDirectory(extractedTempDir);
-            }
         }
     }
 
@@ -180,47 +197,38 @@ internal static class Program
         {
             var arg = args[i];
 
-            if (string.Equals(arg, "--32", StringComparison.OrdinalIgnoreCase))
+            if (arg.Equals("--32", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("/32", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("-32", StringComparison.OrdinalIgnoreCase))
             {
                 mode = LaunchArchMode.Force32;
                 continue;
             }
 
-            if (string.Equals(arg, "--64", StringComparison.OrdinalIgnoreCase))
+            if (arg.Equals("--64", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("/64", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("-64", StringComparison.OrdinalIgnoreCase))
             {
                 mode = LaunchArchMode.Force64;
                 continue;
             }
 
-            if (string.Equals(arg, "--auto", StringComparison.OrdinalIgnoreCase))
+            if (arg.Equals("--auto", StringComparison.OrdinalIgnoreCase))
             {
                 mode = LaunchArchMode.Auto;
                 continue;
             }
 
-            if (string.Equals(arg, "--arch", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(arg, "-a", StringComparison.OrdinalIgnoreCase))
+            if (arg.StartsWith("--arch=", StringComparison.OrdinalIgnoreCase))
             {
-                if (i + 1 >= args.Length)
-                {
-                    throw new ArgumentException("Missing value for --arch.");
-                }
+                mode = ParseArchValue(arg.Substring("--arch=".Length));
+                continue;
+            }
 
+            if ((arg.Equals("--arch", StringComparison.OrdinalIgnoreCase) || arg.Equals("-a", StringComparison.OrdinalIgnoreCase)) && i + 1 < args.Length)
+            {
                 i++;
-                var value = args[i];
-
-                mode = value.ToLowerInvariant() switch
-                {
-                    "auto" => LaunchArchMode.Auto,
-                    "32" => LaunchArchMode.Force32,
-                    "x86" => LaunchArchMode.Force32,
-                    "32bit" => LaunchArchMode.Force32,
-                    "64" => LaunchArchMode.Force64,
-                    "x64" => LaunchArchMode.Force64,
-                    "64bit" => LaunchArchMode.Force64,
-                    _ => throw new ArgumentException($"Unsupported --arch value: {value}")
-                };
-
+                mode = ParseArchValue(args[i]);
                 continue;
             }
 
@@ -230,212 +238,305 @@ internal static class Program
         return positional;
     }
 
+    private static LaunchArchMode ParseArchValue(string value)
+    {
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "32" or "x86" or "32bit" => LaunchArchMode.Force32,
+            "64" or "x64" or "64bit" => LaunchArchMode.Force64,
+            _ => LaunchArchMode.Auto,
+        };
+    }
+
+    private static bool IsHelpSwitch(string arg)
+    {
+        return arg is "-h" or "--help" or "/?" or "/h";
+    }
+
     private static void ShowHelp()
     {
         Console.WriteLine("Usage:");
-        Console.WriteLine("  Il2CppDumper.exe [--auto|--32|--64|--arch auto|32|64] <input-file> <global-metadata.dat> <output-folder>");
+        Console.WriteLine("  Il2CppDumper.exe <binary> <global-metadata.dat> <output-folder> [--arch=auto|32|64]");
+        Console.WriteLine("  Il2CppDumper.exe <apk-or-xapk> <output-folder> [--arch=auto|32|64]");
         Console.WriteLine();
-        Console.WriteLine("Input file can be:");
-        Console.WriteLine("  - APK");
-        Console.WriteLine("  - libil2cpp.so");
-        Console.WriteLine("  - GameAssembly.dll");
-        Console.WriteLine("  - another executable/binary file");
+        Console.WriteLine("If launched without arguments, a GUI window will open.");
+        Console.WriteLine("Auto mode for APK/XAPK prefers 64-bit when both 32-bit and 64-bit binaries are available.");
     }
 
-    private static string ResolveChildDir(string inputPath, LaunchArchMode mode, Action<string>? log)
+    private static PreparedInput PrepareInput(string inputPath, string? metadataPath, LaunchArchMode mode, Action<string>? log)
     {
-        if (mode == LaunchArchMode.Force64)
+        if (IsPackagePath(inputPath))
         {
-            WriteLog(log, "Architecture mode: forced 64-bit");
-            return "bin64bit";
+            return ResolveFromPackage(inputPath, metadataPath, mode, log);
         }
 
-        if (mode == LaunchArchMode.Force32)
+        var bitness = mode switch
         {
-            WriteLog(log, "Architecture mode: forced 32-bit");
-            return "bin32bit";
-        }
-
-        TargetArch arch;
-
-        if (IsApk(inputPath))
-        {
-            arch = DetectFromApk(inputPath, log);
-        }
-        else if (LooksLikeElf(inputPath))
-        {
-            arch = DetectFromElf(inputPath);
-        }
-        else
-        {
-            arch = DetectFromPe(inputPath);
-        }
-
-        return arch switch
-        {
-            TargetArch.Bit64 => "bin64bit",
-            TargetArch.Bit32 => "bin32bit",
-            _ => throw new InvalidOperationException("Could not determine 32/64-bit automatically. Select the mode manually.")
+            LaunchArchMode.Force32 => RuntimeBitness.Bit32,
+            LaunchArchMode.Force64 => RuntimeBitness.Bit64,
+            _ => DetectBinaryBitness(inputPath),
         };
+
+        log?.Invoke($"Detected input type: {DescribeInputType(inputPath)}");
+        return new PreparedInput(inputPath, metadataPath!, bitness, null);
     }
 
-    private static bool IsApk(string path)
+    private static PreparedInput ResolveFromPackage(string packagePath, string? metadataPath, LaunchArchMode mode, Action<string>? log)
     {
-        return string.Equals(Path.GetExtension(path), ".apk", StringComparison.OrdinalIgnoreCase);
-    }
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Il2CppDumperLauncher", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
 
-    private static bool LooksLikeElf(string path)
-    {
-        return string.Equals(Path.GetExtension(path), ".so", StringComparison.OrdinalIgnoreCase)
-               || string.Equals(Path.GetFileName(path), "libil2cpp.so", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static TargetArch DetectFromApk(string apkPath, Action<string>? log)
-    {
-        using var stream = File.OpenRead(apkPath);
-        using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
-
-        var hasArm64 = zip.Entries.Any(e =>
-            e.FullName.Equals("lib/arm64-v8a/libil2cpp.so", StringComparison.OrdinalIgnoreCase));
-
-        var hasArm32 = zip.Entries.Any(e =>
-            e.FullName.Equals("lib/armeabi-v7a/libil2cpp.so", StringComparison.OrdinalIgnoreCase));
-
-        var hasX64 = zip.Entries.Any(e =>
-            e.FullName.Equals("lib/x86_64/libil2cpp.so", StringComparison.OrdinalIgnoreCase));
-
-        var hasX86 = zip.Entries.Any(e =>
-            e.FullName.Equals("lib/x86/libil2cpp.so", StringComparison.OrdinalIgnoreCase));
-
-        if (hasArm64 || hasX64)
+        try
         {
-            WriteLog(log, "APK ABI detected: 64-bit");
-            return TargetArch.Bit64;
-        }
-
-        if (hasArm32 || hasX86)
-        {
-            WriteLog(log, "APK ABI detected: 32-bit");
-            return TargetArch.Bit32;
-        }
-
-        return TargetArch.Unknown;
-    }
-
-    private static string ExtractLibIl2CppFromApk(
-        string apkPath,
-        string tempDir,
-        string childDir,
-        Action<string>? log)
-    {
-        using var stream = File.OpenRead(apkPath);
-        using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
-
-        var candidates = childDir == "bin64bit"
-            ? new[]
+            var apkSources = GetApkSources(packagePath, tempRoot, log);
+            if (apkSources.Count == 0)
             {
-                "lib/arm64-v8a/libil2cpp.so",
-                "lib/x86_64/libil2cpp.so",
-                "lib/armeabi-v7a/libil2cpp.so",
-                "lib/x86/libil2cpp.so"
+                throw new InvalidOperationException("No APK files were found inside the selected package.");
             }
-            : new[]
+
+            var libCandidates = new List<PackageLibCandidate>();
+            PackageMetadataCandidate? packageMetadata = null;
+
+            foreach (var apkSource in apkSources)
             {
-                "lib/armeabi-v7a/libil2cpp.so",
-                "lib/x86/libil2cpp.so",
-                "lib/arm64-v8a/libil2cpp.so",
-                "lib/x86_64/libil2cpp.so"
-            };
+                using var apkStream = File.OpenRead(apkSource.ApkPath);
+                using var apkZip = new ZipArchive(apkStream, ZipArchiveMode.Read);
 
-        var entry = candidates
-            .Select(candidate => zip.GetEntry(candidate))
-            .FirstOrDefault(e => e != null);
+                packageMetadata ??= FindMetadataCandidate(apkZip, apkSource.DisplayName, apkSource.ApkPath);
+                libCandidates.AddRange(FindLibCandidates(apkZip, apkSource.DisplayName, apkSource.ApkPath));
+            }
 
-        if (entry == null)
-        {
-            throw new FileNotFoundException("libil2cpp.so was not found inside the APK.");
+            if (libCandidates.Count == 0)
+            {
+                throw new InvalidOperationException("No libil2cpp.so for a supported ABI was found in the selected package.");
+            }
+
+            var selectedLib = SelectLibCandidate(libCandidates, mode);
+            var extractedBinary = Path.Combine(tempRoot, "libil2cpp.so");
+            ExtractNestedZipEntry(selectedLib.ApkPath, selectedLib.EntryPath, extractedBinary);
+            log?.Invoke($"Selected ABI: {selectedLib.AbiName}");
+            log?.Invoke($"Extracted libil2cpp.so from {selectedLib.SourceName}");
+
+            string resolvedMetadataPath;
+            if (!string.IsNullOrWhiteSpace(metadataPath))
+            {
+                resolvedMetadataPath = metadataPath;
+                log?.Invoke("Using manually selected global-metadata.dat file.");
+            }
+            else
+            {
+                if (packageMetadata == null)
+                {
+                    throw new InvalidOperationException("global-metadata.dat was not found inside the selected package.");
+                }
+
+                resolvedMetadataPath = Path.Combine(tempRoot, "global-metadata.dat");
+                ExtractNestedZipEntry(packageMetadata.ApkPath, packageMetadata.EntryPath, resolvedMetadataPath);
+                log?.Invoke($"Extracted global-metadata.dat from {packageMetadata.SourceName}");
+            }
+
+            return new PreparedInput(extractedBinary, resolvedMetadataPath, selectedLib.Bitness, tempRoot);
         }
-
-        var outputPath = Path.Combine(tempDir, "libil2cpp.so");
-        entry.ExtractToFile(outputPath, true);
-
-        WriteLog(log, $"Extracted {entry.FullName} to temporary file.");
-        return outputPath;
+        catch
+        {
+            TryDeleteDirectory(tempRoot);
+            throw;
+        }
     }
 
-    private static TargetArch DetectFromElf(string soPath)
+    private static List<ApkSource> GetApkSources(string packagePath, string tempRoot, Action<string>? log)
     {
-        using var fs = File.OpenRead(soPath);
-        using var br = new BinaryReader(fs);
-
-        var magic = br.ReadBytes(4);
-        if (magic.Length != 4 ||
-            magic[0] != 0x7F ||
-            magic[1] != (byte)'E' ||
-            magic[2] != (byte)'L' ||
-            magic[3] != (byte)'F')
+        if (Path.GetExtension(packagePath).Equals(".apk", StringComparison.OrdinalIgnoreCase))
         {
-            return TargetArch.Unknown;
+            log?.Invoke("Detected package type: APK");
+            return new List<ApkSource> { new(Path.GetFileName(packagePath), packagePath) };
         }
 
-        var eiClass = br.ReadByte();
-        return eiClass switch
+        log?.Invoke("Detected package type: XAPK");
+
+        var extractedApksDir = Path.Combine(tempRoot, "apks");
+        Directory.CreateDirectory(extractedApksDir);
+
+        var apkSources = new List<ApkSource>();
+        using var xapkStream = File.OpenRead(packagePath);
+        using var xapkZip = new ZipArchive(xapkStream, ZipArchiveMode.Read);
+
+        var apkEntries = xapkZip.Entries
+            .Where(entry => entry.FullName.EndsWith(".apk", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(entry => entry.FullName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var entry in apkEntries)
         {
-            1 => TargetArch.Bit32,
-            2 => TargetArch.Bit64,
-            _ => TargetArch.Unknown
+            var fileName = Path.GetFileName(entry.FullName);
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                continue;
+            }
+
+            var targetPath = Path.Combine(extractedApksDir, $"{apkSources.Count:D2}_{fileName}");
+            entry.ExtractToFile(targetPath, true);
+            apkSources.Add(new ApkSource(entry.FullName, targetPath));
+        }
+
+        log?.Invoke($"Found {apkSources.Count} embedded APK file(s).");
+        return apkSources;
+    }
+
+    private static PackageMetadataCandidate? FindMetadataCandidate(ZipArchive apkZip, string sourceName, string apkPath)
+    {
+        var entry = apkZip.Entries.FirstOrDefault(x =>
+            NormalizePath(x.FullName).Equals("assets/bin/Data/Managed/Metadata/global-metadata.dat", StringComparison.OrdinalIgnoreCase));
+
+        entry ??= apkZip.Entries.FirstOrDefault(x =>
+        {
+            var normalized = NormalizePath(x.FullName);
+            return normalized.Equals("global-metadata.dat", StringComparison.OrdinalIgnoreCase)
+                   || normalized.EndsWith("/global-metadata.dat", StringComparison.OrdinalIgnoreCase);
+        });
+
+        return entry == null ? null : new PackageMetadataCandidate(sourceName, apkPath, entry.FullName);
+    }
+
+    private static IEnumerable<PackageLibCandidate> FindLibCandidates(ZipArchive apkZip, string sourceName, string apkPath)
+    {
+        foreach (var entry in apkZip.Entries)
+        {
+            if (TryMapApkEntry(entry.FullName, out var bitness, out var abiName))
+            {
+                yield return new PackageLibCandidate(sourceName, apkPath, entry.FullName, bitness, abiName);
+            }
+        }
+    }
+
+    private static PackageLibCandidate SelectLibCandidate(List<PackageLibCandidate> candidates, LaunchArchMode mode)
+    {
+        return mode switch
+        {
+            LaunchArchMode.Force32 => candidates.FirstOrDefault(x => x.Bitness == RuntimeBitness.Bit32)
+                                      ?? throw new InvalidOperationException("The selected package does not contain a 32-bit libil2cpp.so."),
+            LaunchArchMode.Force64 => candidates.FirstOrDefault(x => x.Bitness == RuntimeBitness.Bit64)
+                                      ?? throw new InvalidOperationException("The selected package does not contain a 64-bit libil2cpp.so."),
+            _ => candidates.FirstOrDefault(x => x.Bitness == RuntimeBitness.Bit64)
+                 ?? candidates.First(x => x.Bitness == RuntimeBitness.Bit32),
         };
     }
 
-    private static TargetArch DetectFromPe(string path)
+    private static void ExtractNestedZipEntry(string apkPath, string entryPath, string outputPath)
     {
-        using var fs = File.OpenRead(path);
+        using var apkStream = File.OpenRead(apkPath);
+        using var apkZip = new ZipArchive(apkStream, ZipArchiveMode.Read);
+        var entry = apkZip.GetEntry(entryPath)
+            ?? throw new InvalidOperationException($"Failed to locate {entryPath} inside {Path.GetFileName(apkPath)}.");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        entry.ExtractToFile(outputPath, true);
+    }
+
+    private static string DescribeInputType(string inputPath)
+    {
+        if (IsPackagePath(inputPath))
+        {
+            return Path.GetExtension(inputPath).TrimStart('.').ToUpperInvariant();
+        }
+
+        using var fs = File.OpenRead(inputPath);
         using var br = new BinaryReader(fs);
+        var magic = br.ReadUInt32();
 
-        if (fs.Length < 0x40)
+        return magic switch
         {
-            return TargetArch.Unknown;
-        }
+            0x464C457F => "ELF",
+            0x905A4D => "PE",
+            0xCAFEBABE or 0xBEBAFECA or 0xFEEDFACE or 0xFEEDFACF => "Mach-O",
+            _ => "binary",
+        };
+    }
 
-        fs.Seek(0, SeekOrigin.Begin);
-        if (br.ReadUInt16() != 0x5A4D)
+    private static RuntimeBitness DetectBinaryBitness(string inputPath)
+    {
+        using var fs = File.OpenRead(inputPath);
+        using var br = new BinaryReader(fs);
+        var magic = br.ReadUInt32();
+
+        return magic switch
         {
-            return TargetArch.Unknown;
-        }
+            0x464C457F => DetectElfBitness(fs, br),
+            0x905A4D => DetectPeBitness(fs, br),
+            0xCAFEBABE or 0xBEBAFECA => RuntimeBitness.Bit64,
+            0xFEEDFACF => RuntimeBitness.Bit64,
+            0xFEEDFACE => RuntimeBitness.Bit32,
+            _ => throw new InvalidOperationException("Could not determine 32/64-bit automatically. Choose the mode manually."),
+        };
+    }
 
-        fs.Seek(0x3C, SeekOrigin.Begin);
+    private static RuntimeBitness DetectElfBitness(FileStream fs, BinaryReader br)
+    {
+        fs.Position = 4;
+        var elfClass = br.ReadByte();
+        return elfClass switch
+        {
+            1 => RuntimeBitness.Bit32,
+            2 => RuntimeBitness.Bit64,
+            _ => throw new InvalidOperationException("Unknown ELF class."),
+        };
+    }
+
+    private static RuntimeBitness DetectPeBitness(FileStream fs, BinaryReader br)
+    {
+        fs.Position = 0x3C;
         var peOffset = br.ReadInt32();
-
-        if (peOffset <= 0 || peOffset > fs.Length - 6)
-        {
-            return TargetArch.Unknown;
-        }
-
-        fs.Seek(peOffset, SeekOrigin.Begin);
-        if (br.ReadUInt32() != 0x00004550)
-        {
-            return TargetArch.Unknown;
-        }
-
+        fs.Position = peOffset + 4;
         var machine = br.ReadUInt16();
 
         return machine switch
         {
-            0x014c => TargetArch.Bit32,
-            0x8664 => TargetArch.Bit64,
-            _ => TargetArch.Unknown
+            0x014c => RuntimeBitness.Bit32,
+            0x8664 => RuntimeBitness.Bit64,
+            _ => throw new InvalidOperationException($"Unknown PE machine: 0x{machine:X4}"),
         };
     }
 
-    private static string? ResolveConfigPath(string baseDir)
+    private static bool TryMapApkEntry(string fullName, out RuntimeBitness bitness, out string abiName)
     {
-        var direct = Path.Combine(baseDir, "config.json");
-        if (File.Exists(direct))
+        var normalized = NormalizePath(fullName);
+
+        if (normalized.Equals("lib/arm64-v8a/libil2cpp.so", StringComparison.OrdinalIgnoreCase))
         {
-            return direct;
+            bitness = RuntimeBitness.Bit64;
+            abiName = "arm64-v8a";
+            return true;
         }
 
-        return null;
+        if (normalized.Equals("lib/armeabi-v7a/libil2cpp.so", StringComparison.OrdinalIgnoreCase))
+        {
+            bitness = RuntimeBitness.Bit32;
+            abiName = "armeabi-v7a";
+            return true;
+        }
+
+        if (normalized.Equals("lib/x86_64/libil2cpp.so", StringComparison.OrdinalIgnoreCase))
+        {
+            bitness = RuntimeBitness.Bit64;
+            abiName = "x86_64";
+            return true;
+        }
+
+        if (normalized.Equals("lib/x86/libil2cpp.so", StringComparison.OrdinalIgnoreCase))
+        {
+            bitness = RuntimeBitness.Bit32;
+            abiName = "x86";
+            return true;
+        }
+
+        bitness = default;
+        abiName = string.Empty;
+        return false;
+    }
+
+    private static string NormalizePath(string path)
+    {
+        return path.Replace('\\', '/');
     }
 
     private static void TryDeleteDirectory(string path)
@@ -452,9 +553,73 @@ internal static class Program
         }
     }
 
-    private static void WriteLog(Action<string>? log, string message)
+    private sealed class ApkSource
     {
-        Console.WriteLine(message);
-        log?.Invoke(message);
+        public ApkSource(string displayName, string apkPath)
+        {
+            DisplayName = displayName;
+            ApkPath = apkPath;
+        }
+
+        public string DisplayName { get; }
+        public string ApkPath { get; }
+    }
+
+    private sealed class PackageMetadataCandidate
+    {
+        public PackageMetadataCandidate(string sourceName, string apkPath, string entryPath)
+        {
+            SourceName = sourceName;
+            ApkPath = apkPath;
+            EntryPath = entryPath;
+        }
+
+        public string SourceName { get; }
+        public string ApkPath { get; }
+        public string EntryPath { get; }
+    }
+
+    private sealed class PackageLibCandidate
+    {
+        public PackageLibCandidate(string sourceName, string apkPath, string entryPath, RuntimeBitness bitness, string abiName)
+        {
+            SourceName = sourceName;
+            ApkPath = apkPath;
+            EntryPath = entryPath;
+            Bitness = bitness;
+            AbiName = abiName;
+        }
+
+        public string SourceName { get; }
+        public string ApkPath { get; }
+        public string EntryPath { get; }
+        public RuntimeBitness Bitness { get; }
+        public string AbiName { get; }
+    }
+
+    private sealed class PreparedInput : IDisposable
+    {
+        public PreparedInput(string binaryPath, string metadataPath, RuntimeBitness targetBitness, string? tempDirectory)
+        {
+            BinaryPath = binaryPath;
+            MetadataPath = metadataPath;
+            TargetBitness = targetBitness;
+            TempDirectory = tempDirectory;
+        }
+
+        public string BinaryPath { get; }
+        public string MetadataPath { get; }
+        public RuntimeBitness TargetBitness { get; }
+        public string? TempDirectory { get; }
+
+        public void Dispose()
+        {
+            if (string.IsNullOrWhiteSpace(TempDirectory) || !Directory.Exists(TempDirectory))
+            {
+                return;
+            }
+
+            TryDeleteDirectory(TempDirectory);
+        }
     }
 }

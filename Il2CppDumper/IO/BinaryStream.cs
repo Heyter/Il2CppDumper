@@ -120,12 +120,12 @@ public class BinaryStream : IDisposable
         }
 
         object t = new T();
-        foreach (var i in t.GetType().GetFields())
+        foreach (var field in t.GetType().GetFields())
         {
-            if (!attributeCache.TryGetValue(i, out var versionAttributes))
+            if (!attributeCache.TryGetValue(field, out var versionAttributes))
             {
-                versionAttributes = i.GetCustomAttributes<VersionAttribute>().ToArray();
-                attributeCache.Add(i, versionAttributes);
+                versionAttributes = field.GetCustomAttributes<VersionAttribute>().ToArray();
+                attributeCache.Add(field, versionAttributes);
             }
 
             if (versionAttributes.Length > 0)
@@ -146,32 +146,32 @@ public class BinaryStream : IDisposable
                 }
             }
 
-            var fieldType = i.FieldType;
+            var fieldType = field.FieldType;
             if (fieldType.IsPrimitive)
             {
-                i.SetValue(t, ReadPrimitive(fieldType));
+                field.SetValue(t, ReadPrimitive(fieldType));
             }
             else if (fieldType.IsEnum)
             {
-                var e = fieldType.GetField("value__")!.FieldType;
-                i.SetValue(t, ReadPrimitive(e));
+                var enumValueType = fieldType.GetField("value__")!.FieldType;
+                field.SetValue(t, ReadPrimitive(enumValueType));
             }
             else if (fieldType.IsArray)
             {
-                var arrayLengthAttribute = i.GetCustomAttribute<ArrayLengthAttribute>()!;
+                var arrayLengthAttribute = field.GetCustomAttribute<ArrayLengthAttribute>()!;
                 if (!genericMethodCache.TryGetValue(fieldType, out var methodInfo))
                 {
                     methodInfo = readClassArray.MakeGenericMethod(fieldType.GetElementType()!);
                     genericMethodCache.Add(fieldType, methodInfo);
                 }
 
-                i.SetValue(t, methodInfo.Invoke(this, new object[] { arrayLengthAttribute.Length }));
+                field.SetValue(t, methodInfo.Invoke(this, new object[] { arrayLengthAttribute.Length }));
             }
             else if (typeof(IIl2CppIndex).IsAssignableFrom(fieldType))
             {
                 var index = (IIl2CppIndex)Activator.CreateInstance(fieldType)!;
                 index.Read(this);
-                i.SetValue(t, index);
+                field.SetValue(t, index);
             }
             else
             {
@@ -181,7 +181,7 @@ public class BinaryStream : IDisposable
                     genericMethodCache.Add(fieldType, methodInfo);
                 }
 
-                i.SetValue(t, methodInfo.Invoke(this, null));
+                field.SetValue(t, methodInfo.Invoke(this, null));
             }
         }
 
@@ -190,13 +190,13 @@ public class BinaryStream : IDisposable
 
     public T[] ReadClassArray<T>(long count) where T : new()
     {
-        var t = new T[count];
+        var items = new T[count];
         for (var i = 0; i < count; i++)
         {
-            t[i] = ReadClass<T>();
+            items[i] = ReadClass<T>();
         }
 
-        return t;
+        return items;
     }
 
     public T[] ReadClassArray<T>(ulong addr, ulong count) where T : new()
@@ -214,10 +214,10 @@ public class BinaryStream : IDisposable
     {
         Position = addr;
         var bytes = new List<byte>();
-        byte b;
-        while ((b = ReadByte()) != 0)
+        byte value;
+        while ((value = ReadByte()) != 0)
         {
-            bytes.Add(b);
+            bytes.Add(value);
         }
 
         return Encoding.UTF8.GetString(bytes.ToArray());

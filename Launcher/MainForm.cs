@@ -30,9 +30,9 @@ internal sealed class MainForm : Form
     {
         Text = "Il2CppDumper Launcher";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(860, 560);
-        Width = 960;
-        Height = 640;
+        MinimumSize = new Size(920, 600);
+        Width = 1040;
+        Height = 700;
 
         cmbArch.Items.AddRange(new object[]
         {
@@ -46,22 +46,23 @@ internal sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 3,
-            RowCount = 6,
+            RowCount = 7,
             Padding = new Padding(10),
         };
 
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220));
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40));
 
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
         table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        table.Controls.Add(new Label { Text = "Binary / libil2cpp.so / APK", TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, 0);
+        table.Controls.Add(new Label { Text = "Binary / libil2cpp.so / APK / XAPK", TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, 0);
         table.Controls.Add(txtInput, 1, 0);
         table.Controls.Add(btnBrowseInput, 2, 0);
 
@@ -69,19 +70,23 @@ internal sealed class MainForm : Form
         table.Controls.Add(txtMetadata, 1, 1);
         table.Controls.Add(btnBrowseMetadata, 2, 1);
 
-        table.Controls.Add(new Label { Text = "Output folder", TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, 2);
-        table.Controls.Add(txtOutput, 1, 2);
-        table.Controls.Add(btnBrowseOutput, 2, 2);
+        var metadataHint = new Label { Text = "Optional for APK/XAPK in auto-resolve mode", TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill };
+        table.Controls.Add(metadataHint, 0, 2);
+        table.SetColumnSpan(metadataHint, 3);
 
-        table.Controls.Add(new Label { Text = "Architecture", TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, 3);
-        table.Controls.Add(cmbArch, 1, 3);
-        table.Controls.Add(new Label { Text = string.Empty }, 2, 3);
+        table.Controls.Add(new Label { Text = "Output folder", TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, 3);
+        table.Controls.Add(txtOutput, 1, 3);
+        table.Controls.Add(btnBrowseOutput, 2, 3);
+
+        table.Controls.Add(new Label { Text = "Architecture", TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, 4);
+        table.Controls.Add(cmbArch, 1, 4);
+        table.Controls.Add(new Label { Text = string.Empty }, 2, 4);
 
         table.SetColumnSpan(btnDump, 3);
-        table.Controls.Add(btnDump, 0, 4);
+        table.Controls.Add(btnDump, 0, 5);
 
         table.SetColumnSpan(txtLog, 3);
-        table.Controls.Add(txtLog, 0, 5);
+        table.Controls.Add(txtLog, 0, 6);
 
         Controls.Add(table);
 
@@ -95,8 +100,8 @@ internal sealed class MainForm : Form
     {
         using var dialog = new OpenFileDialog
         {
-            Title = "Select binary, libil2cpp.so, or APK",
-            Filter = "APK or binary (*.apk;*.so;*.dll;*.exe)|*.apk;*.so;*.dll;*.exe|All files (*.*)|*.*",
+            Title = "Select binary, libil2cpp.so, APK, or XAPK",
+            Filter = "Supported input (*.xapk;*.apk;*.so;*.dll;*.exe)|*.xapk;*.apk;*.so;*.dll;*.exe|All files (*.*)|*.*",
             CheckFileExists = true,
             Multiselect = false,
         };
@@ -144,16 +149,23 @@ internal sealed class MainForm : Form
         var metadataPath = txtMetadata.Text.Trim();
         var outputPath = txtOutput.Text.Trim();
         var mode = ((ArchComboItem)cmbArch.SelectedItem!).Mode;
+        var isPackage = Program.IsPackagePath(inputPath);
 
         if (string.IsNullOrWhiteSpace(inputPath) || !File.Exists(inputPath))
         {
-            MessageBox.Show(this, "Specify a valid binary/APK path.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, "Specify a valid binary, APK, or XAPK path.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(metadataPath) || !File.Exists(metadataPath))
+        if (!isPackage && (string.IsNullOrWhiteSpace(metadataPath) || !File.Exists(metadataPath)))
         {
             MessageBox.Show(this, "Specify a valid global-metadata.dat path.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(metadataPath) && !File.Exists(metadataPath))
+        {
+            MessageBox.Show(this, "The selected global-metadata.dat file does not exist.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
@@ -171,7 +183,18 @@ internal sealed class MainForm : Form
 
         try
         {
-            var exitCode = await Program.LaunchAsync(inputPath, metadataPath, outputPath, mode, AppendLog);
+            if (isPackage && string.IsNullOrWhiteSpace(metadataPath))
+            {
+                AppendLog("Metadata file was not selected. The launcher will try to resolve it automatically from the package.");
+            }
+
+            var exitCode = await Program.LaunchAsync(
+                inputPath,
+                string.IsNullOrWhiteSpace(metadataPath) ? null : metadataPath,
+                outputPath,
+                mode,
+                AppendLog);
+
             AppendLog(exitCode == 0 ? "Finished." : $"Failed with code {exitCode}.");
         }
         catch (Exception ex)

@@ -195,7 +195,6 @@ jobs:
 
           Remove-Item (Join-Path $packageDir "bin32bit\config.json") -Force -ErrorAction SilentlyContinue
           Remove-Item (Join-Path $packageDir "bin64bit\config.json") -Force -ErrorAction SilentlyContinue
-
           Remove-Item (Join-Path $packageDir "bin32bit\bin") -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item (Join-Path $packageDir "bin64bit\bin") -Recurse -Force -ErrorAction SilentlyContinue
 

@@ -1,0 +1,214 @@
+name: Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag. Empty = build-<run_number>'
+        required: false
+        default: ''
+      prerelease:
+        description: 'Mark release as prerelease'
+        type: boolean
+        required: false
+        default: false
+      draft:
+        description: 'Create draft release'
+        type: boolean
+        required: false
+        default: false
+
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-win-x64:
+    runs-on: windows-latest
+
+    env:
+      PROJECT_PATH: Il2CppDumper/Il2CppDumper.csproj
+      PROJECT_DIR: Il2CppDumper
+      CONFIGURATION: Release
+      RUNTIME: win-x64
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve release metadata
+        id: meta
+        run: |
+          $tag = ""
+
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ github.event.inputs.tag }}"
+          }
+          elseif ("${{ github.ref_type }}" -eq "tag") {
+            $tag = "${{ github.ref_name }}"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            $tag = "build-${{ github.run_number }}"
+          }
+
+          $publishDir = Join-Path $env:RUNNER_TEMP "publish\Il2CppDumper-win-x64"
+          $zipName = "Il2CppDumper-win-x64-$tag.zip"
+          $zipPath = Join-Path $env:RUNNER_TEMP $zipName
+
+          $isPrerelease = "false"
+          $isDraft = "false"
+
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            if ("${{ github.event.inputs.prerelease }}" -eq "true") {
+              $isPrerelease = "true"
+            }
+
+            if ("${{ github.event.inputs.draft }}" -eq "true") {
+              $isDraft = "true"
+            }
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "publish_dir=$publishDir" >> $env:GITHUB_OUTPUT
+          "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+          "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
+          "is_prerelease=$isPrerelease" >> $env:GITHUB_OUTPUT
+          "is_draft=$isDraft" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        run: dotnet restore $env:PROJECT_PATH
+
+      - name: Publish
+        run: >
+          dotnet publish $env:PROJECT_PATH
+          -c $env:CONFIGURATION
+          -r $env:RUNTIME
+          --self-contained true
+          --no-restore
+          -o "${{ steps.meta.outputs.publish_dir }}"
+
+      - name: Stage required content files
+        run: |
+          $publishDir = "${{ steps.meta.outputs.publish_dir }}"
+          $projectDir = Join-Path $env:GITHUB_WORKSPACE $env:PROJECT_DIR
+
+          $files = @(
+            "config.json",
+            "ghidra.py",
+            "ghidra_wasm.py",
+            "ghidra_with_struct.py",
+            "ida.py",
+            "ida_py3.py",
+            "ida_with_struct.py",
+            "ida_with_struct_py3.py",
+            "il2cpp_header_to_ghidra.py"
+          )
+
+          foreach ($file in $files) {
+            $source = Join-Path $projectDir $file
+            $destination = Join-Path $publishDir $file
+
+            if (-not (Test-Path $source)) {
+              throw "Required source file not found: $source"
+            }
+
+            Copy-Item $source -Destination $destination -Force
+          }
+
+      - name: Verify build output
+        run: |
+          $publishDir = "${{ steps.meta.outputs.publish_dir }}"
+          $required = @(
+            "Il2CppDumper.exe",
+            "config.json",
+            "ghidra.py",
+            "ghidra_wasm.py",
+            "ghidra_with_struct.py",
+            "ida.py",
+            "ida_py3.py",
+            "ida_with_struct.py",
+            "ida_with_struct_py3.py",
+            "il2cpp_header_to_ghidra.py"
+          )
+
+          foreach ($file in $required) {
+            $path = Join-Path $publishDir $file
+            if (-not (Test-Path $path)) {
+              throw "Missing expected file: $file"
+            }
+          }
+
+          Get-ChildItem $publishDir | Select-Object Name, Length
+
+      - name: Create zip
+        run: |
+          $publishDir = "${{ steps.meta.outputs.publish_dir }}"
+          $zipPath = "${{ steps.meta.outputs.zip_path }}"
+
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+
+          Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $zipPath -Force
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.zip_name }}
+          path: ${{ steps.meta.outputs.zip_path }}
+          if-no-files-found: error
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          ZIP_PATH: ${{ steps.meta.outputs.zip_path }}
+          IS_PRERELEASE: ${{ steps.meta.outputs.is_prerelease }}
+          IS_DRAFT: ${{ steps.meta.outputs.is_draft }}
+        run: |
+          $repo = "${{ github.repository }}"
+
+          gh release view $env:TAG --repo $repo *> $null
+          $releaseExists = $LASTEXITCODE -eq 0
+
+          if (-not $releaseExists) {
+            $args = @(
+              "release", "create", $env:TAG, $env:ZIP_PATH,
+              "--repo", $repo,
+              "--target", "${{ github.sha }}",
+              "--title", $env:TAG,
+              "--generate-notes"
+            )
+
+            if ($env:IS_PRERELEASE -eq "true") {
+              $args += "--prerelease"
+            }
+
+            if ($env:IS_DRAFT -eq "true") {
+              $args += "--draft"
+            }
+
+            gh @args
+          }
+          else {
+            gh release upload $env:TAG $env:ZIP_PATH --repo $repo --clobber
+          }

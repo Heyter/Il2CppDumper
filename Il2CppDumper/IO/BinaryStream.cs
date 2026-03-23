@@ -9,7 +9,7 @@ namespace Il2CppDumper;
 
 public class BinaryStream : IDisposable
 {
-    private readonly Dictionary<FieldInfo, object[]> attributeCache;
+    private readonly Dictionary<FieldInfo, VersionAttribute[]> attributeCache;
     private readonly Dictionary<Type, MethodInfo> genericMethodCache;
     private readonly MethodInfo readClass;
     private readonly MethodInfo readClassArray;
@@ -31,7 +31,7 @@ public class BinaryStream : IDisposable
         readClass = GetType().GetMethod("ReadClass", Type.EmptyTypes)!;
         readClassArray = GetType().GetMethod("ReadClassArray", new[] { typeof(long) })!;
         genericMethodCache = new Dictionary<Type, MethodInfo>();
-        attributeCache = new Dictionary<FieldInfo, object[]>();
+        attributeCache = new Dictionary<FieldInfo, VersionAttribute[]>();
     }
 
     public ulong Position
@@ -124,17 +124,14 @@ public class BinaryStream : IDisposable
         {
             if (!attributeCache.TryGetValue(i, out var versionAttributes))
             {
-                if (Attribute.IsDefined(i, typeof(VersionAttribute)))
-                {
-                    versionAttributes = i.GetCustomAttributes().ToArray();
-                    attributeCache.Add(i, versionAttributes);
-                }
+                versionAttributes = i.GetCustomAttributes<VersionAttribute>().ToArray();
+                attributeCache.Add(i, versionAttributes);
             }
 
-            if (versionAttributes?.Length > 0)
+            if (versionAttributes.Length > 0)
             {
                 var read = false;
-                foreach (dynamic versionAttribute in versionAttributes)
+                foreach (var versionAttribute in versionAttributes)
                 {
                     if (Version >= versionAttribute.Min && Version <= versionAttribute.Max)
                     {

@@ -161,6 +161,7 @@ jobs:
           $launcherDir = "${{ runner.temp }}\download\launcher-root"
           $bin32Src = "${{ runner.temp }}\download\bin32bit"
           $bin64Src = "${{ runner.temp }}\download\bin64bit"
+          $scriptsDir = Join-Path $packageDir "scripts"
 
           if (Test-Path $packageDir) {
             Remove-Item $packageDir -Recurse -Force
@@ -169,6 +170,7 @@ jobs:
           New-Item -ItemType Directory -Path $packageDir | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $packageDir "bin32bit") | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $packageDir "bin64bit") | Out-Null
+          New-Item -ItemType Directory -Path $scriptsDir | Out-Null
 
           Copy-Item (Join-Path $launcherDir "*") -Destination $packageDir -Recurse -Force
           Copy-Item "Il2CppDumper\config.json" -Destination (Join-Path $packageDir "config.json") -Force
@@ -176,8 +178,26 @@ jobs:
           Copy-Item (Join-Path $bin32Src "*") -Destination (Join-Path $packageDir "bin32bit") -Recurse -Force
           Copy-Item (Join-Path $bin64Src "*") -Destination (Join-Path $packageDir "bin64bit") -Recurse -Force
 
+          $scriptFiles = @(
+            "ghidra.py",
+            "ghidra_wasm.py",
+            "ghidra_with_struct.py",
+            "ida.py",
+            "ida_py3.py",
+            "ida_with_struct.py",
+            "ida_with_struct_py3.py",
+            "il2cpp_header_to_ghidra.py"
+          )
+
+          foreach ($file in $scriptFiles) {
+            Copy-Item (Join-Path "Il2CppDumper" $file) -Destination (Join-Path $scriptsDir $file) -Force
+          }
+
           Remove-Item (Join-Path $packageDir "bin32bit\config.json") -Force -ErrorAction SilentlyContinue
           Remove-Item (Join-Path $packageDir "bin64bit\config.json") -Force -ErrorAction SilentlyContinue
+
+          Remove-Item (Join-Path $packageDir "bin32bit\bin") -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $packageDir "bin64bit\bin") -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Create zip
         run: |

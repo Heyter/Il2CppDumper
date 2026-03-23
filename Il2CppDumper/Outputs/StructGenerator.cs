@@ -1467,32 +1467,18 @@ public class StructGenerator
                 {
                     if (context != null)
                     {
+                        // NOTE: Generic Enums and Inline Enums handling
                         if (context.class_inst > 0)
                         {
-                            var typeDef = executor.GetTypeDefinitionFromIl2CppType(il2CppType);
-                            var fieldEnd = typeDef.fieldStart + typeDef.field_count;
-                            for (var i = typeDef.fieldStart; i < fieldEnd; i++)
-                            {
-                                var fieldDef = metadata.fieldDefs[i];
-                                var name = metadata.GetStringFromIndex(fieldDef.nameIndex);
-
-                                if (name == "value__")
-                                {
-                                    var fieldType = il2Cpp.types[fieldDef.typeIndex];
-
-                                    return IsCustomType(fieldType, null);
-                                }
-                            }
+                            return true;
                         }
-                        else if (context.method_inst > 0)
-                        {
-                            var genericParameter = executor.GetGenericParameterFromIl2CppType(il2CppType);
-                            var genericInst = il2Cpp.MapVATR<Il2CppGenericInst>(context.method_inst);
-                            var pointers = il2Cpp.MapVATR<ulong>(genericInst.type_argv, genericInst.type_argc);
-                            var pointer = pointers[genericParameter.num];
-                            var type = il2Cpp.GetIl2CppType(pointer);
-                            return IsCustomType(type, null);
-                        }
+
+                        var genericParameter = executor.GetGenericParameterFromIl2CppType(il2CppType);
+                        var genericInst = il2Cpp.MapVATR<Il2CppGenericInst>(context.method_inst);
+                        var pointers = il2Cpp.MapVATR<ulong>(genericInst.type_argv, genericInst.type_argc);
+                        var pointer = pointers[genericParameter.num];
+                        var type = il2Cpp.GetIl2CppType(pointer);
+                        return IsCustomType(type, null);
                     }
 
                     return false;

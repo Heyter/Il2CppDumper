@@ -23,7 +23,7 @@ public class BinaryStream : IDisposable
         stream = input;
         Reader = new BinaryReader(stream, Encoding.UTF8, true);
         if (stream.CanWrite) {
-            writer = new BinaryWriter(stream, Encoding.UTF8, true);
+            Writer = new BinaryWriter(stream, Encoding.UTF8, true);
         }
         readClass = GetType().GetMethod("ReadClass", Type.EmptyTypes);
         readClassArray = GetType().GetMethod("ReadClassArray", new[] { typeof(long) });
@@ -361,7 +361,7 @@ public class BinaryStream : IDisposable
         if (disposing)
         {
             Reader.Dispose();
-            Writer.Dispose();
+            Writer?.Dispose();
             stream.Close();
         }
     }

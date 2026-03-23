@@ -39,6 +39,7 @@ internal class Program
     internal static int RunDump(string il2cppPath, string metadataPath, string outputDir, Action<string>? logger = null)
     {
         log = logger;
+        Metadata? metadata = null;
 
         try
         {
@@ -56,16 +57,10 @@ internal class Program
                 return 1;
             }
 
-            if (string.IsNullOrWhiteSpace(outputDir))
-            {
-                WriteLine("ERROR: The specified output folder is empty.");
-                return 1;
-            }
-
             Directory.CreateDirectory(outputDir);
             outputDir = Path.GetFullPath(outputDir) + Path.DirectorySeparatorChar;
 
-            if (Init(il2cppPath, metadataPath, out var metadata, out var il2Cpp))
+            if (Init(il2cppPath, metadataPath, out metadata, out var il2Cpp))
             {
                 Dump(metadata, il2Cpp, outputDir);
                 return 0;
@@ -80,6 +75,7 @@ internal class Program
         }
         finally
         {
+            metadata?.Dispose();
             log = null;
         }
     }
@@ -212,7 +208,7 @@ internal class Program
     private static bool Init(string il2cppPath, string metadataPath, out Metadata metadata, out Il2Cpp il2Cpp)
     {
         WriteLine("Initializing metadata...");
-        using var metadataStream = File.OpenRead(metadataPath);
+        var metadataStream = File.OpenRead(metadataPath);
         metadata = new Metadata(metadataStream);
         WriteLine($"Metadata Version: {metadata.Version}");
 
